@@ -36,8 +36,24 @@ class IngestionPipeline:
             ids=ids
         )
         print(f"Successfully stored {len(chunks)} chunks in the vector database.")
+def run(self, pdf_path, plan_name):
+        print(f"--- Processing Plan: {plan_name} ---")
+        chunks = self.extract_and_chunk(pdf_path)
+        
+        # Adding metadata lets you filter searches by plan later
+        metadatas = [{"plan": plan_name, "source": pdf_path} for _ in chunks]
+        embeddings = self.model.encode(chunks).tolist()
+        ids = [f"{plan_name}_{i}" for i in range(len(chunks))]
+        
+        self.collection.add(
+            documents=chunks,
+            embeddings=embeddings,
+            metadatas=metadatas, # <--- NEW: Professional data handling
+            ids=ids
+        )
+        print(f"Stored {len(chunks)} chunks for {plan_name}.")
 
 if __name__ == "__main__":
     pipeline = IngestionPipeline()
     # Replace with a path to a real PDF in your 'data/' folder
-    # pipeline.run("data/my_document.pdf")
+    pipeline.run("data/Associate PRT Onboarding and Client Experience - Blumont Annuity.pdf")
