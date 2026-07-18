@@ -25,9 +25,11 @@ class RAGPipeline:
             query_embeddings=query_vec,
             n_results=n_results
         )
-        return results['documents'][0] if results['documents'] else []
+        documents = results['documents'][0] if results['documents'] else []
+        metadatas = results['metadatas'][0] if results.get('metadatas') else [{}] * len(documents)
+        return list(zip(documents, metadatas))
 
-    def generate_answer(self, question, context_chunks):
+    def generate_answer(self, question, context):
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             return None
@@ -35,31 +37,36 @@ class RAGPipeline:
         import anthropic
 
         client = anthropic.Anthropic(api_key=api_key)
-        context = "\n\n".join(context_chunks)
         prompt = (
             "Answer the question using only the context below. "
             "If the context doesn't contain the answer, say so.\n\n"
             f"Context:\n{context}\n\nQuestion: {question}"
         )
-        response = client.messages.create(
-            model=DEFAULT_MODEL,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = client.messages.create(
+                model=DEFAULT_MODEL,
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+        except anthropic.APIError as exc:
+            print(f"\n(Answer generation failed ({exc}); showing retrieved context only.)")
+            return None
         return response.content[0].text
 
     def ask(self, question):
-        context_chunks = self.retrieve(question)
+        results = self.retrieve(question)
 
-        if not context_chunks:
+        if not results:
             print("No relevant context found in the database.")
             return None
 
         print("\n--- RELEVANT CONTEXT FOUND ---")
-        for doc in context_chunks:
-            print(f"- {doc[:200]}...")
+        for doc, meta in results:
+            source = meta.get("source") or meta.get("plan") or "unknown source"
+            print(f"[{source}] {doc[:200]}...")
 
-        answer = self.generate_answer(question, context_chunks)
+        context = "\n\n".join(doc for doc, _ in results)
+        answer = self.generate_answer(question, context)
         if answer:
             print("\n--- ANSWER ---")
             print(answer)
@@ -69,7 +76,7 @@ class RAGPipeline:
                 "from the retrieved context above.)"
             )
 
-        return answer or context_chunks
+        return answer or [doc for doc, _ in results]
 
 
 if __name__ == "__main__":
